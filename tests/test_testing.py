@@ -1,12 +1,13 @@
 from io import BytesIO
 
+from django import VERSION as DJANGO_VERSION
 from django.contrib.auth.models import User
 from django.shortcuts import redirect
 from django.test import TestCase, override_settings
 from django.urls import path
 
-from rest_framework import fields, serializers
-from rest_framework.decorators import api_view
+from rest_framework import fields, parsers, serializers
+from rest_framework.decorators import api_view, parser_classes
 from rest_framework.response import Response
 from rest_framework.test import (
     APIClient, APIRequestFactory, URLPatternsTestCase, force_authenticate
@@ -46,11 +47,18 @@ def post_view(request):
     return Response(serializer.validated_data)
 
 
+@api_view(['POST'])
+@parser_classes((parsers.JSONParser,))
+def post_json_view(request):
+    return Response(request.data)
+
+
 urlpatterns = [
     path('view/', view),
     path('session-view/', session_view),
     path('redirect-view/', redirect_view),
     path('post-view/', post_view)
+    path('post-json-view/', post_json_view),
 ]
 
 
@@ -199,6 +207,21 @@ class TestAPITestClient(TestCase):
         )
         assert response.status_code == 200
         assert response.data == {"flag": True}
+
+    def test_post_encodes_data_based_on_json_content_type(self):
+        data = {'data': True}
+        response = self.client.post(
+            '/post-json-view/',
+            data=data,
+            content_type='application/json'
+        )
+
+        if DJANGO_VERSION < (2, 1):
+            assert response.status_code == 400
+            assert response.data['detail'].code == 'parse_error'
+        else:
+            assert response.status_code == 200
+            assert response.data == data
 
 
 class TestAPIRequestFactory(TestCase):
